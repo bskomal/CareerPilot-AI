@@ -5,6 +5,7 @@ sentence-transformers
 faiss-cpu
 spacy
 pymupdf
+pdfplumber
 python-docx
 numpy
 scikit-learn
