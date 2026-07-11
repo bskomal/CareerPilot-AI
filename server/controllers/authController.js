@@ -1,4 +1,3 @@
-const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 
@@ -9,26 +8,21 @@ const registerUser = async (req, res) => {
     const { name, email, password } = req.body;
 
     try {
-        // Check if user already exists
         let user = await User.findOne({ email });
+
         if (user) {
             return res.status(400).json({ message: 'User already exists' });
         }
 
-        // Create new user
+        // Password is hashed by User.js pre-save middleware
         user = new User({
             name,
             email,
             password
         });
 
-        // Hash password
-        const salt = await bcrypt.genSalt(10);
-        user.password = await bcrypt.hash(password, salt);
-
         await user.save();
 
-        // Create and return JWT
         const payload = {
             user: {
                 id: user.id
@@ -57,19 +51,18 @@ const loginUser = async (req, res) => {
     const { email, password } = req.body;
 
     try {
-        // Check if user exists
-        let user = await User.findOne({ email }).select('+password');
+        const user = await User.findOne({ email }).select('+password');
+
         if (!user) {
             return res.status(400).json({ message: 'Invalid credentials' });
         }
 
-        // Check password
-        const isMatch = await bcrypt.compare(password, user.password);
+        const isMatch = await user.matchPassword(password);
+
         if (!isMatch) {
             return res.status(400).json({ message: 'Invalid credentials' });
         }
 
-        // Create and return JWT
         const payload = {
             user: {
                 id: user.id
@@ -103,7 +96,6 @@ const getMe = async (req, res) => {
         res.status(500).send('Server Error');
     }
 };
-
 
 module.exports = {
     registerUser,
