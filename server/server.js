@@ -2,12 +2,22 @@ const express = require('express');
 const cors = require('cors');
 const dotenv = require('dotenv');
 const connectDB = require('./config/db');
+const fs = require('fs'); // <--- Added this
+const path = require('path'); // <--- Added this
 
 // Load environment variables
 dotenv.config();
 
 // Connect to MongoDB
 connectDB();
+
+// ✅ ENSURE UPLOADS DIRECTORY EXISTS
+// This prevents the "ENOENT: no such file or directory" error on Render
+const uploadDir = path.join(__dirname, 'uploads');
+if (!fs.existsSync(uploadDir)) {
+  fs.mkdirSync(uploadDir, { recursive: true });
+  console.log('📁 Uploads directory created successfully');
+}
 
 const app = express();
 
