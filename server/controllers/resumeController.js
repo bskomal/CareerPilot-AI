@@ -5,6 +5,7 @@ const fs = require('fs');
 const path = require('path');
 const cosineSimilarity = require('../utils/cosineSimilarity');
 const { generateRecommendations, generateRoadmap } = require('../utils/recommendationEngine');
+const { getCareerPredictions } = require('../utils/careerPathPredictor');
 
 // ✅ Uses environment variable (Render expects this)
 const AI_URL = process.env.AI_SERVICE_URL || 'http://localhost:8000';
@@ -183,7 +184,39 @@ const matchJobDescription = async (req, res) => {
     }
 };
 
+// ============================
+// PREDICT CAREER PATH (PHASE 7)
+// ============================
+const predictCareerPath = async (req, res) => {
+    try {
+        const { resumeId } = req.params;
+        const resume = await Resume.findById(resumeId);
+
+        if (!resume) {
+            return res.status(404).json({ message: 'Resume not found' });
+        }
+
+        if (!resume.embedding || resume.embedding.length === 0) {
+            return res.status(400).json({
+                message: 'Resume not processed yet. Please upload and wait for processing.',
+                status: resume.status
+            });
+        }
+
+        const predictions = await getCareerPredictions(resume);
+        res.json(predictions);
+
+    } catch (error) {
+        console.error('Career Path Prediction Error:', error.message);
+        res.status(500).json({
+            message: 'Server error during career path prediction',
+            error: error.message
+        });
+    }
+};
+
 module.exports = {
     uploadResume,
-    matchJobDescription
+    matchJobDescription,
+    predictCareerPath
 };
