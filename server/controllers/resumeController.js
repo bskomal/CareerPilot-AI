@@ -4,14 +4,11 @@ const FormData = require('form-data');
 const fs = require('fs');
 const path = require('path');
 const cosineSimilarity = require('../utils/cosineSimilarity');
-const { generateRecommendations, generateRoadmap } = require('../utils/recommendationEngine');
+const { generateRecommendations, generateRoadmap, skillDatabase } = require('../utils/recommendationEngine');
 
-// ✅ AI Service URL from environment
 const AI_URL = process.env.AI_SERVICE_URL || 'http://localhost:8000';
 
-// ===============================
-// ✅ Upload Resume + Generate Embedding
-// ===============================
+// Upload Resume + Parse + Embedding
 const uploadResume = async (req, res) => {
     try {
         if (!req.file) {
@@ -29,18 +26,15 @@ const uploadResume = async (req, res) => {
 
         try {
             const absolutePath = path.resolve(req.file.path);
-
             const formData = new FormData();
             formData.append('file', fs.createReadStream(absolutePath));
 
-            // ✅ Uses environment variable
+            // FIXED: Added /api prefix
             const aiResponse = await axios.post(
-                `${AI_URL}/parse-resume`,
+                `${AI_URL}/api/parse-resume`,
                 formData,
                 {
-                    headers: {
-                        ...formData.getHeaders(),
-                    },
+                    headers: { ...formData.getHeaders() },
                     timeout: 120000,
                 }
             );
@@ -50,6 +44,7 @@ const uploadResume = async (req, res) => {
                 extracted_skills,
                 extracted_experience,
                 extracted_education,
+                full_text
             } = aiResponse.data;
 
             resume.extracted_name = extracted_name;
@@ -57,23 +52,23 @@ const uploadResume = async (req, res) => {
             resume.extracted_experience = extracted_experience || [];
             resume.extracted_education = extracted_education || [];
 
-            // ✅ Generate embedding
-            const combinedText = [
+            // Use full_text for better embedding if available
+            const combinedText = full_text || [
                 extracted_name,
                 ...(extracted_skills || []),
                 ...(extracted_experience || []),
                 ...(extracted_education || []),
             ].join(' ');
 
-            // ✅ Uses environment variable
+            // FIXED: Added /api prefix
             const embeddingResponse = await axios.post(
-                `${AI_URL}/generate-embedding`,
-                { text: combinedText }
+                `${AI_URL}/api/generate-embedding`,
+                { text: combinedText },
+                { timeout: 120000 }
             );
 
             resume.embedding = embeddingResponse.data.embedding;
             resume.status = 'processed';
-
             await resume.save();
 
             return res.status(201).json({
@@ -83,27 +78,20 @@ const uploadResume = async (req, res) => {
 
         } catch (aiError) {
             console.error('AI Processing Error:', aiError.response?.data || aiError.message);
-
             resume.status = 'failed';
             await resume.save();
-
             return res.status(500).json({
                 message: 'Resume uploaded but AI processing failed',
                 resume,
             });
         }
-
     } catch (error) {
         console.error('Upload Error:', error.message);
-        return res.status(500).json({
-            message: 'Server error during resume upload',
-        });
+        return res.status(500).json({ message: 'Server error during resume upload' });
     }
 };
 
-// ===============================
-// ✅ Match Resume With Job Description
-// ===============================
+// Match Resume + Phase 6 Recommendations
 const matchJobDescription = async (req, res) => {
     try {
         const { resumeId } = req.params;
@@ -114,78 +102,58 @@ const matchJobDescription = async (req, res) => {
         }
 
         const resume = await Resume.findById(resumeId);
-
         if (!resume) {
             return res.status(404).json({ message: 'Resume not found' });
         }
-
         if (!resume.embedding || resume.embedding.length === 0) {
             return res.status(400).json({ message: 'Resume embedding not found' });
         }
 
-        // ✅ Uses environment variable
+        // FIXED: Added /api prefix
         const jdResponse = await axios.post(
-            `${AI_URL}/generate-embedding`,
-            { text: jobDescription }
+            `${AI_URL}/api/generate-embedding`,
+            { text: jobDescription },
+            { timeout: 120000 }
         );
-
         const jdEmbedding = jdResponse.data.embedding;
 
-        if (resume.embedding.length !== jdEmbedding.length) {
-            return res.status(400).json({
-                message: 'Embedding size mismatch',
-            });
-        }
-
-        // ✅ Cosine similarity
         const similarity = cosineSimilarity(resume.embedding, jdEmbedding);
         const matchPercentage = Math.max(0, Math.min(100, similarity * 100)).toFixed(2);
 
-        // ✅ Skill Matching
+        // Improved skill matching logic
         const resumeSkills = resume.extracted_skills.map(s => s.toLowerCase());
         const jobText = jobDescription.toLowerCase();
+        const allKnownSkills = Object.keys(skillDatabase);
 
-        const matchingSkills = resumeSkills.filter(skill =>
-            jobText.includes(skill)
-        );
+        // Find skills mentioned in job description
+        const jobRequiredSkills = allKnownSkills.filter(skill => jobText.includes(skill.toLowerCase()));
 
-        const missingSkills = resumeSkills.filter(skill =>
-            !jobText.includes(skill)
-        );
+        const matchingSkills = jobRequiredSkills.filter(skill => resumeSkills.includes(skill.toLowerCase()));
+        const missingSkills = jobRequiredSkills.filter(skill => !resumeSkills.includes(skill.toLowerCase()));
 
+        // Phase 6
         const recommendations = generateRecommendations(missingSkills);
         const learningRoadmap = generateRoadmap(recommendations);
 
-        // ✅ Score Label
         let overallScore;
-        if (matchPercentage >= 80) {
-            overallScore = 'Strong Match';
-        } else if (matchPercentage >= 60) {
-            overallScore = 'Good Match';
-        } else if (matchPercentage >= 40) {
-            overallScore = 'Moderate Match';
-        } else {
-            overallScore = 'Weak Match';
-        }
+        if (matchPercentage >= 80) overallScore = 'Strong Match';
+        else if (matchPercentage >= 60) overallScore = 'Good Match';
+        else if (matchPercentage >= 40) overallScore = 'Moderate Match';
+        else overallScore = 'Weak Match';
 
         res.json({
             matchPercentage,
             matchingSkills,
             missingSkills,
-            overallScore,
             recommendations,
             learningRoadmap,
+            overallScore,
         });
 
     } catch (error) {
-        console.error('Matching Error:', error.message);
-        res.status(500).json({
-            message: 'Server error during matching',
-        });
+        console.error('Matching Error:', error.response?.data || error.message);
+        res.status(500).json({ message: 'Server error during matching' });
     }
 };
 
-module.exports = {
-    uploadResume,
-    matchJobDescription,
-};
+module.exports = { uploadResume, matchJobDescription };
