@@ -8,12 +8,10 @@ const { generateRecommendations, generateRoadmap, skillDatabase } = require('../
 
 const AI_URL = process.env.AI_SERVICE_URL || 'http://localhost:8000';
 
-// Upload Resume + Parse + Embedding
+// ===== Upload + Parse + Embedding =====
 const uploadResume = async (req, res) => {
     try {
-        if (!req.file) {
-            return res.status(400).json({ message: 'No file uploaded' });
-        }
+        if (!req.file) return res.status(400).json({ message: 'No file uploaded' });
 
         const resume = await Resume.create({
             user: req.user._id,
@@ -29,30 +27,18 @@ const uploadResume = async (req, res) => {
             const formData = new FormData();
             formData.append('file', fs.createReadStream(absolutePath));
 
-            // FIXED: Added /api prefix
-            const aiResponse = await axios.post(
-                `${AI_URL}/api/parse-resume`,
-                formData,
-                {
-                    headers: { ...formData.getHeaders() },
-                    timeout: 120000,
-                }
-            );
+            const aiResponse = await axios.post(`${AI_URL}/api/parse-resume`, formData, {
+                headers: { ...formData.getHeaders() },
+                timeout: 120000,
+            });
 
-            const {
-                extracted_name,
-                extracted_skills,
-                extracted_experience,
-                extracted_education,
-                full_text
-            } = aiResponse.data;
+            const { extracted_name, extracted_skills, extracted_experience, extracted_education, full_text } = aiResponse.data;
 
             resume.extracted_name = extracted_name;
             resume.extracted_skills = extracted_skills || [];
             resume.extracted_experience = extracted_experience || [];
             resume.extracted_education = extracted_education || [];
 
-            // Use full_text for better embedding if available
             const combinedText = full_text || [
                 extracted_name,
                 ...(extracted_skills || []),
@@ -60,7 +46,6 @@ const uploadResume = async (req, res) => {
                 ...(extracted_education || []),
             ].join(' ');
 
-            // FIXED: Added /api prefix
             const embeddingResponse = await axios.post(
                 `${AI_URL}/api/generate-embedding`,
                 { text: combinedText },
@@ -71,19 +56,12 @@ const uploadResume = async (req, res) => {
             resume.status = 'processed';
             await resume.save();
 
-            return res.status(201).json({
-                message: 'Resume uploaded and processed successfully',
-                resume,
-            });
-
+            return res.status(201).json({ message: 'Resume uploaded and processed successfully', resume });
         } catch (aiError) {
             console.error('AI Processing Error:', aiError.response?.data || aiError.message);
             resume.status = 'failed';
             await resume.save();
-            return res.status(500).json({
-                message: 'Resume uploaded but AI processing failed',
-                resume,
-            });
+            return res.status(500).json({ message: 'Resume uploaded but AI processing failed', resume });
         }
     } catch (error) {
         console.error('Upload Error:', error.message);
@@ -91,25 +69,18 @@ const uploadResume = async (req, res) => {
     }
 };
 
-// Match Resume + Phase 6 Recommendations
+// ===== Match + Phase 6 Recommendations =====
 const matchJobDescription = async (req, res) => {
     try {
         const { resumeId } = req.params;
         const { jobDescription } = req.body;
-
-        if (!jobDescription) {
-            return res.status(400).json({ message: 'Job description is required' });
-        }
+        if (!jobDescription) return res.status(400).json({ message: 'Job description is required' });
 
         const resume = await Resume.findById(resumeId);
-        if (!resume) {
-            return res.status(404).json({ message: 'Resume not found' });
-        }
-        if (!resume.embedding || resume.embedding.length === 0) {
+        if (!resume) return res.status(404).json({ message: 'Resume not found' });
+        if (!resume.embedding || resume.embedding.length === 0)
             return res.status(400).json({ message: 'Resume embedding not found' });
-        }
 
-        // FIXED: Added /api prefix
         const jdResponse = await axios.post(
             `${AI_URL}/api/generate-embedding`,
             { text: jobDescription },
@@ -120,18 +91,13 @@ const matchJobDescription = async (req, res) => {
         const similarity = cosineSimilarity(resume.embedding, jdEmbedding);
         const matchPercentage = Math.max(0, Math.min(100, similarity * 100)).toFixed(2);
 
-        // Improved skill matching logic
         const resumeSkills = resume.extracted_skills.map(s => s.toLowerCase());
         const jobText = jobDescription.toLowerCase();
-        const allKnownSkills = Object.keys(skillDatabase);
+        const jobRequiredSkills = Object.keys(skillDatabase).filter(skill => jobText.includes(skill.toLowerCase()));
 
-        // Find skills mentioned in job description
-        const jobRequiredSkills = allKnownSkills.filter(skill => jobText.includes(skill.toLowerCase()));
+        const matchingSkills = jobRequiredSkills.filter(skill => resumeSkills.includes(skill));
+        const missingSkills = jobRequiredSkills.filter(skill => !resumeSkills.includes(skill));
 
-        const matchingSkills = jobRequiredSkills.filter(skill => resumeSkills.includes(skill.toLowerCase()));
-        const missingSkills = jobRequiredSkills.filter(skill => !resumeSkills.includes(skill.toLowerCase()));
-
-        // Phase 6
         const recommendations = generateRecommendations(missingSkills);
         const learningRoadmap = generateRoadmap(recommendations);
 
@@ -141,15 +107,7 @@ const matchJobDescription = async (req, res) => {
         else if (matchPercentage >= 40) overallScore = 'Moderate Match';
         else overallScore = 'Weak Match';
 
-        res.json({
-            matchPercentage,
-            matchingSkills,
-            missingSkills,
-            recommendations,
-            learningRoadmap,
-            overallScore,
-        });
-
+        res.json({ matchPercentage, matchingSkills, missingSkills, recommendations, learningRoadmap, overallScore });
     } catch (error) {
         console.error('Matching Error:', error.response?.data || error.message);
         res.status(500).json({ message: 'Server error during matching' });
