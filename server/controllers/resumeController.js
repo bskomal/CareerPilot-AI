@@ -4,6 +4,7 @@ const FormData = require('form-data');
 const fs = require('fs');
 const path = require('path');
 const cosineSimilarity = require('../utils/cosineSimilarity');
+const { generateRecommendations, generateRoadmap } = require('../utils/recommendationEngine');
 
 // ✅ AI Service URL from environment
 const AI_URL = process.env.AI_SERVICE_URL || 'http://localhost:8000';
@@ -152,6 +153,9 @@ const matchJobDescription = async (req, res) => {
             !jobText.includes(skill)
         );
 
+        const recommendations = generateRecommendations(missingSkills);
+        const learningRoadmap = generateRoadmap(recommendations);
+
         // ✅ Score Label
         let overallScore;
         if (matchPercentage >= 80) {
@@ -169,6 +173,8 @@ const matchJobDescription = async (req, res) => {
             matchingSkills,
             missingSkills,
             overallScore,
+            recommendations,
+            learningRoadmap,
         });
 
     } catch (error) {
