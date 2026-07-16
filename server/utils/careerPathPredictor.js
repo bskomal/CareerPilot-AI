@@ -1,6 +1,6 @@
 const axios = require('axios');
 const cosineSimilarity = require('./cosineSimilarity');
-const { generateRecommendations, generateRoadmap } = require('./recommendationEngine');
+
 
 // AI Service URL from environment
 const AI_URL = process.env.AI_SERVICE_URL || 'http://localhost:8000';
@@ -165,7 +165,16 @@ function computeTransitionScore(similarity, skillOverlapScore) {
  * Builds the career roadmap for missing skills using recommendation engine.
  */
 function buildCareerRoadmap(missingSkills) {
-    return generateRoadmap(generateRecommendations(missingSkills));
+    if (!missingSkills || missingSkills.length === 0) return [];
+    return missingSkills.map((skill, index) => {
+        let name = skill.trim();
+        if (name.length <= 3) {
+            name = name.toUpperCase();
+        } else {
+            name = name.charAt(0).toUpperCase() + name.slice(1);
+        }
+        return `Step ${index + 1}: Acquire proficiency in ${name}`;
+    });
 }
 
 /**

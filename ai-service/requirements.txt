@@ -11,3 +11,5 @@ scikit-learn
 python-dotenv
 openai
 python-multipart
+joblib
+

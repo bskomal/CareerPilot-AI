@@ -6,7 +6,7 @@ const fs = require('fs'); // <--- Added this
 const path = require('path'); // <--- Added this
 
 // Load environment variables
-dotenv.config();
+dotenv.config({ path: path.join(__dirname, '.env') });
 
 // Connect to MongoDB
 connectDB();

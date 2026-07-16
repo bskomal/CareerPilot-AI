@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { uploadResume, matchJobDescription, predictCareerPath } = require('../controllers/resumeController');
+const { uploadResume, matchJobDescription, predictCareerPath, compareJobDescriptions, planCareerTransition } = require('../controllers/resumeController');
 const { protect } = require('../middleware/authMiddleware');
 const multer = require('multer');
 const path = require('path');
@@ -38,5 +38,7 @@ const upload = multer({
 router.post('/upload', protect, upload.single('resume'), uploadResume);
 router.post('/match/:resumeId', protect, matchJobDescription);
 router.post('/career-path/:resumeId', protect, predictCareerPath);
+router.post('/compare/:resumeId', protect, compareJobDescriptions);
+router.post('/transition-plan/:resumeId', protect, planCareerTransition);
 
 module.exports = router;
