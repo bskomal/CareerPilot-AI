@@ -101,6 +101,7 @@ export default function Dashboard() {
                                 resumeId={resume._id} 
                                 token={token} 
                                 API_BASE={API_BASE} 
+                                setActiveTab={setActiveTab}
                             />
                         ) : (
                             <EmptyState
